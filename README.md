@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+# 🚀 My Awesome Web App
 
-First, run the development server:
+මෙය Next.js (App Router), TypeScript, Tailwind CSS සහ Prisma ORM භාවිතයෙන් නිර්මාණය කරන ලද නවීන වෙබ් අඩවියකි/යෙදුමකි.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🛠️ Tech Stack (භාවිතා කළ තාක්ෂණයන්)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Framework:** [Next.js](https://nextjs.org/) (App Router)
+- **Language:** [TypeScript](https://www.typescriptlang.org/)
+- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+- **Database & ORM:** PostgreSQL / [Prisma ORM](https://www.prisma.io/)
+- **Authentication:** Auth.js (NextAuth)
+- **Hosting:**  Railway
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 📁 Project Structure (ෆෝල්ඩර ව්‍යුහය)
 
-To learn more about Next.js, take a look at the following resources:
+```text
+├── app/                  # Next.js App Router (Pages, Layouts & API routes)
+│   ├── layout.tsx        # Root layout
+│   └── page.tsx          # Homepage (marketplace landing page)
+│   └── components/       # Reusable UI components
+│   │    ├── marketplace/     # like daraz 
+│   │    │   │
+│   │    │   └── mCommon/           #common components for marketplace
+│   │    └── inventory/       # for inventory managemet side page components
+│   │    │   │
+│   │    │   └── iCommon/          #common components for inventory
+│   │    └── shared/          # shared components for inventory and marktplace
+│   │     
+│   └── inventory/        # Reusable UI components    
+│   │
+│   └── marketplace/
+│
+├── lib/                  # Utility functions & Prisma client setup
+│   └── prisma.ts         # Prisma DB instance
+├── prisma/               # Database schema & migrations
+│   └── schema.prisma     # Prisma data models
+└── public/               # Static assets (Images, Icons, SVG)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## 📡 API Reference / Endpoints
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 1. Get All Products (සියලුම ප්‍රොඩක්ට්ස් ලබා ගැනීම)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+* **URL:** `/api/products`
+* **Method:** `GET`
+* **Auth Required:** No
+* **Query Parameters (Optional):**
+  * `page` (number) - පිටු අංකය (Default: 1)
+  * `limit` (number) - එක් පිටුවකට අයිතම ගණන (Default: 10)
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "prod_123",
+      "title": "Wireless Mouse",
+      "price": 25.00,
+      "inStock": true
+    }
+  ]
+}
+

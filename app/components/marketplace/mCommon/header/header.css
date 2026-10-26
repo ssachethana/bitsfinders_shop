@@ -1,0 +1,22 @@
+/* Keyframes used by the header. Imported once from Header.tsx. */
+@keyframes bs-ping {
+  0% { transform: scale(1); opacity: 0.8; }
+  80%, 100% { transform: scale(1.7); opacity: 0; }
+}
+@keyframes bs-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes bs-pop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bs-motion,
+  .bs-motion * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
