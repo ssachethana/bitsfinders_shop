@@ -6,9 +6,9 @@ import HeroBanner from '@/app/components/marketplace/homePage/heroBanner/heroBan
 import CategoryShowcase from '@/app/components/marketplace/homePage/categoryShowcase/Shopbycategory'
 import FlashDealsSection from '@/app/components/marketplace/homePage/fashDealsSection/flash_deals'
 import PromoBannerGrid from '@/app/components/marketplace/homePage/promoBannerGrid/promo_carousel'
-import TopRatedShopsSection from '@/app/components/marketplace/homePage/topRatedShopsSection/topratedshops'
-import WhyChooseUsSection from '@/app/components/marketplace/homePage/whyChooseUsSection/whychooseus'
-import BusinessCtaBanner from '@/app/components/marketplace/homePage/businessCtaBanner/ctabanner'
+import TopRatedShopsSection from '@/app/components/marketplace/homePage/topRatedShopsSection/TopRatedShops'
+import WhyChooseUsSection from '@/app/components/marketplace/homePage/whyChooseUsSection/whychoose'
+import BusinessCtaBanner from '@/app/components/marketplace/homePage/businessCtaBanner/ctaBanner'
 import Footer from '@/app/components/marketplace/mCommon/footer/footer'
 
 function page() {
