@@ -77,29 +77,38 @@ const rs = (n: number) => `Rs. ${n.toLocaleString("en-US")}`;
 /** Reveals an element once it scrolls into view. */
 function useInView<T extends HTMLElement>() {
   const ref = useRef<T>(null);
-  // Must start identical on server and client (no window/IntersectionObserver checks here),
-  // otherwise React reports a hydration mismatch.
   const [seen, setSeen] = useState(false);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Without IntersectionObserver (old browsers) show content immediately.
+
+    // Fallback for browsers without IntersectionObserver.
+    // Defer the state update instead of running it synchronously
+    // inside the effect body.
     if (typeof IntersectionObserver === "undefined") {
-      setSeen(true);
-      return;
+      const frame = requestAnimationFrame(() => {
+        setSeen(true);
+      });
+
+      return () => cancelAnimationFrame(frame);
     }
-    const io = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting) {
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
           setSeen(true);
-          io.disconnect();
+          observer.disconnect();
         }
       },
       { threshold: 0.12 },
     );
-    io.observe(el);
-    return () => io.disconnect();
+
+    observer.observe(el);
+
+    return () => observer.disconnect();
   }, []);
+
   return [ref, seen] as const;
 }
 

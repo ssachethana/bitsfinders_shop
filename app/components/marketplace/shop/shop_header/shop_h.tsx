@@ -95,7 +95,7 @@ export default function ShopHeader({
   products = 1200,
   description = "Your trusted neighborhood store for fresh groceries, daily essentials and more.",
   tags = ["Quality products", "Best prices", "Always for you"],
-  bannerSrc = './shop_banner.png',
+  bannerSrc = "/shop_banner.png",
   logoSrc,
   onFollow,
   onMessage,
@@ -128,8 +128,43 @@ export default function ShopHeader({
 
   return (
     <header className="sh-root relative w-full overflow-hidden bg-white">
-      
-     
+      {/* Keyframes + helper classes used by the animations below */}
+      <style>{`
+        @keyframes sh-kenburns {
+          0%   { transform: scale(1)    translate3d(0, 0, 0); }
+          100% { transform: scale(1.12) translate3d(-1.5%, -1%, 0); }
+        }
+        @keyframes sh-float {
+          0%   { transform: translateY(0) scale(.6);       opacity: 0; }
+          20%  { opacity: 1; }
+          100% { transform: translateY(-110px) scale(1.1); opacity: 0; }
+        }
+        @keyframes sh-spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes sh-shine {
+          0%        { transform: translateX(-120%) skewX(-20deg); }
+          60%, 100% { transform: translateX(400%)  skewX(-20deg); }
+        }
+        @keyframes sh-pop {
+          0%   { transform: scale(.2); opacity: .8; }
+          100% { transform: scale(4);  opacity: 0; }
+        }
+        @keyframes sh-up {
+          from { opacity: 0; transform: translateY(14px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .sh-up {
+          opacity: 0;
+          animation: sh-up .6s ease-out forwards;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .sh-root *, .sh-root *::before, .sh-root *::after {
+            animation: none !important;
+          }
+          .sh-up { opacity: 1; }
+        }
+      `}</style>
 
       {/* ============================== BANNER ============================== */}
       <div
@@ -192,13 +227,13 @@ export default function ShopHeader({
 
         {/* Curved wave cut-out at the bottom */}
         <Image
-  src="./Vector.svg"
-  alt=""
-  width={1440}
-  height={120}
-  className="absolute -bottom-px left-0 h-8 w-full sm:h-12 md:h-16"
-  aria-hidden="true"
-/>
+          src="/Vector.svg"
+          alt=""
+          width={1440}
+          height={120}
+          className="absolute -bottom-px left-0 h-8 w-full sm:h-12 md:h-16"
+          aria-hidden="true"
+        />
       </div>
 
       {/* ============================ INFO SECTION ========================== */}
@@ -206,18 +241,17 @@ export default function ShopHeader({
         {/* ---------- Left: avatar + details ---------- */}
         <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:gap-6 sm:text-left">
           {/* Avatar */}
-          <div className="sh-up group relative -mt-14 shrink-0 sm:-mt-20 md:-mt-24" style={{ animationDelay: ".05s" }}>
-            
-            
-            
+          <div
+            className="sh-up group relative -mt-14 shrink-0 sm:-mt-20 md:-mt-24"
+            style={{ animationDelay: ".05s" }}
+          >
+            {/* Spinning gradient ring */}
             <span
-              className="absolute -inset-1 rounded-full b opacity-90 blur-[1px]"
+              className="absolute -inset-1 rounded-full bg-[conic-gradient(from_0deg,#f97316,#22c55e,#f59e0b,#f97316)] opacity-90 blur-[1px]"
               style={{ animation: "sh-spin 6s linear infinite" }}
+              aria-hidden
             />
-            <div
-              className="relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-white shadow-xl transition-transform duration-500 group-hover:scale-105 group-hover:rotate-3 sm:h-36 sm:w-36 md:h-40 md:w-40"
-              
-            >
+            <div className="relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-white shadow-xl transition-transform duration-500 group-hover:scale-105 group-hover:rotate-3 sm:h-36 sm:w-36 md:h-40 md:w-40">
               {logoSrc ? (
                 <img src={logoSrc} alt={`${name} logo`} className="h-full w-full object-cover" />
               ) : (
