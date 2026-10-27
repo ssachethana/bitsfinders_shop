@@ -1,5 +1,7 @@
+"use client"
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import Image from "next/image";
 import {
   BadgeCheck,
   Check,
@@ -37,23 +39,49 @@ export interface ShopHeaderProps {
 /** Animates a number from 0 → value once the element is mounted. */
 function useCountUp(value: number, duration = 1400, decimals = 0) {
   const [display, setDisplay] = useState(0);
+
   useEffect(() => {
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setDisplay(value);
-      return;
-    }
     let raf = 0;
+
+    // Check whether the user prefers reduced motion.
+    const prefersReducedMotion = window.matchMedia?.(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+
+    // Update the state inside an animation-frame callback,
+    // rather than synchronously inside the effect.
+    if (prefersReducedMotion) {
+      raf = requestAnimationFrame(() => {
+        setDisplay(value);
+      });
+
+      return () => cancelAnimationFrame(raf);
+    }
+
     const start = performance.now();
+
+    // Animate the number using an ease-out cubic curve.
     const tick = (now: number) => {
-      const p = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+
       setDisplay(value * eased);
-      if (p < 1) raf = requestAnimationFrame(tick);
+
+      if (progress < 1) {
+        raf = requestAnimationFrame(tick);
+      }
     };
+
     raf = requestAnimationFrame(tick);
+
+    // Clean up pending animation frames.
     return () => cancelAnimationFrame(raf);
   }, [value, duration]);
-  return decimals ? display.toFixed(decimals) : Math.round(display).toLocaleString();
+
+  // Format the animated value for display.
+  return decimals
+    ? display.toFixed(decimals)
+    : Math.round(display).toLocaleString();
 }
 
 /* -------------------------------- Component -------------------------------- */
@@ -67,7 +95,7 @@ export default function ShopHeader({
   products = 1200,
   description = "Your trusted neighborhood store for fresh groceries, daily essentials and more.",
   tags = ["Quality products", "Best prices", "Always for you"],
-  bannerSrc,
+  bannerSrc = './shop_banner.png',
   logoSrc,
   onFollow,
   onMessage,
@@ -100,21 +128,8 @@ export default function ShopHeader({
 
   return (
     <header className="sh-root relative w-full overflow-hidden bg-white">
-      {/* Scoped keyframes so the component is drop-in (no tailwind.config edits) */}
-      <style>{`
-        @keyframes sh-kenburns { 0%{transform:scale(1.05) translate3d(0,0,0)} 100%{transform:scale(1.18) translate3d(-2%,-1%,0)} }
-        @keyframes sh-float { 0%,100%{transform:translateY(0) translateX(0);opacity:.0} 15%{opacity:.9} 85%{opacity:.9} 100%{transform:translateY(-120px) translateX(20px);opacity:0} }
-        @keyframes sh-up { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes sh-shine { 0%{transform:translateX(-130%) skewX(-20deg)} 60%,100%{transform:translateX(230%) skewX(-20deg)} }
-        @keyframes sh-spin { to{transform:rotate(360deg)} }
-        @keyframes sh-pulse { 0%{transform:scale(.9);opacity:.7} 100%{transform:scale(1.7);opacity:0} }
-        @keyframes sh-pop { 0%{transform:scale(.4);opacity:1} 100%{transform:scale(2.4);opacity:0} }
-        @keyframes sh-bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
-        .sh-up{animation:sh-up .7s cubic-bezier(.2,.8,.2,1) both}
-        @media (prefers-reduced-motion: reduce){
-          .sh-root *{animation:none !important;transition:none !important}
-        }
-      `}</style>
+      
+     
 
       {/* ============================== BANNER ============================== */}
       <div
@@ -176,17 +191,14 @@ export default function ShopHeader({
         </div>
 
         {/* Curved wave cut-out at the bottom */}
-        <svg
-          className="absolute -bottom-px left-0 h-8 sm:h-12 md:h-16 w-full text-white"
-          viewBox="0 0 1440 120"
-          preserveAspectRatio="none"
-          aria-hidden
-        >
-          <path
-            fill="currentColor"
-            d="M0,60 C240,10 480,10 720,50 C960,90 1200,100 1440,30 L1440,120 L0,120 Z"
-          />
-        </svg>
+        <Image
+  src="./Vector.svg"
+  alt=""
+  width={1440}
+  height={120}
+  className="absolute -bottom-px left-0 h-8 w-full sm:h-12 md:h-16"
+  aria-hidden="true"
+/>
       </div>
 
       {/* ============================ INFO SECTION ========================== */}
@@ -195,17 +207,16 @@ export default function ShopHeader({
         <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:gap-6 sm:text-left">
           {/* Avatar */}
           <div className="sh-up group relative -mt-14 shrink-0 sm:-mt-20 md:-mt-24" style={{ animationDelay: ".05s" }}>
-            {/* soft pulse rings */}
-            <span className="absolute inset-0 rounded-full bg-orange-400/40" style={{ animation: "sh-pulse 2.6s ease-out infinite" }} />
-            <span className="absolute inset-0 rounded-full bg-green-400/30" style={{ animation: "sh-pulse 2.6s ease-out 1.3s infinite" }} />
-            {/* rotating gradient ring */}
+            
+            
+            
             <span
-              className="absolute -inset-1 rounded-full bg-[conic-gradient(from_0deg,#f97316,#22c55e,#facc15,#f97316)] opacity-90 blur-[1px]"
+              className="absolute -inset-1 rounded-full b opacity-90 blur-[1px]"
               style={{ animation: "sh-spin 6s linear infinite" }}
             />
             <div
               className="relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-white shadow-xl transition-transform duration-500 group-hover:scale-105 group-hover:rotate-3 sm:h-36 sm:w-36 md:h-40 md:w-40"
-              style={{ animation: "sh-bob 4s ease-in-out infinite" }}
+              
             >
               {logoSrc ? (
                 <img src={logoSrc} alt={`${name} logo`} className="h-full w-full object-cover" />
