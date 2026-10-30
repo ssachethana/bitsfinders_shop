@@ -1,25 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
-/** Tracks whether the page has scrolled and how far (0–100). */
-export function useScrollState(threshold = 10) {
-  const [scrolled, setScrolled] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const onScroll = () => {
-      const y = window.scrollY;
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      setScrolled(y > threshold);
-      setProgress(max > 0 ? (y / max) * 100 : 0);
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [threshold]);
-
-  return { scrolled, progress };
-}
+/**
+ * Tracks whether the page has scrolled past `threshold` (state, flips rarely)
+ * and writes scroll progress straight to `barRef` as a transform (no re-renders).
+ */
 
 /**
  * Mobile menu state. While open it locks body scroll, closes on Escape

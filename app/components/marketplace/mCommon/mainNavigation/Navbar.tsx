@@ -1,7 +1,7 @@
 "use client"
 import { useState } from "react";
 import { DEFAULT_ACTIVE } from "@/app/components/marketplace/mCommon/mainNavigation/nav.config";
-import { useMobileMenu, useScrollState, useSpotlight } from "@/app/components/marketplace/mCommon/mainNavigation/hooks";
+import { useMobileMenu, useSpotlight } from "@/app/components/marketplace/mCommon/mainNavigation/hooks";
 import DesktopNav from "@/app/components/marketplace/mCommon/mainNavigation/DesktopNav";
 import MobileMenu from "@/app/components/marketplace/mCommon/mainNavigation/MobileMenu";
 import NavActions, { Brand } from "@/app/components/marketplace/mCommon/mainNavigation/NavActions";
@@ -18,7 +18,6 @@ type Props = { cartCount?: number };
 
 export default function Navbar({ cartCount = 3 }: Props) {
   const [active, setActive] = useState(DEFAULT_ACTIVE);
-  const { scrolled, progress } = useScrollState();
   const { open, close, toggle } = useMobileMenu();
   const spotlight = useSpotlight<HTMLDivElement>();
 
@@ -26,17 +25,11 @@ export default function Navbar({ cartCount = 3 }: Props) {
     <>
       <style>{NAV_KEYFRAMES}</style>
 
-      <header
-        className={`sticky top-0 z-50 w-full transition-shadow duration-300 ${
-          scrolled ? "shadow-[0_8px_30px_rgba(0,0,0,.45)]" : ""
-        }`}
-      >
+      <header className=" w-full">
         <div
           ref={spotlight.ref}
           onMouseMove={spotlight.onMouseMove}
-          className={`group/nav relative overflow-hidden bg-[#141414]/95 backdrop-blur-md transition-[height] duration-300 ${
-            scrolled ? "h-14" : "h-16"
-          }`}
+          className="group/nav relative h-16 overflow-hidden bg-[#141414]/95 backdrop-blur-md"
         >
           {/* cursor spotlight */}
           <div
@@ -46,12 +39,6 @@ export default function Navbar({ cartCount = 3 }: Props) {
               background:
                 "radial-gradient(260px circle at var(--mx,50%) var(--my,50%), rgba(255,255,255,.09), transparent 70%)",
             }}
-          />
-          {/* scroll progress */}
-          <div
-            aria-hidden
-            className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-red-500 via-orange-400 to-yellow-300 transition-[width] duration-150"
-            style={{ width: `${progress}%` }}
           />
 
           <nav

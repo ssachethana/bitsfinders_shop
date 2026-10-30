@@ -1,11 +1,7 @@
-/* Keyframes used by the header. Imported once from Header.tsx. */
+/* Keyframes used by the header (imported once from Header.tsx). */
 @keyframes bs-ping {
   0% { transform: scale(1); opacity: 0.8; }
   80%, 100% { transform: scale(1.7); opacity: 0; }
-}
-@keyframes bs-flow {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
 }
 @keyframes bs-pop {
   0% { transform: scale(0); }
@@ -13,6 +9,7 @@
   100% { transform: scale(1); }
 }
 
+/* Add the `bs-motion` class to any root that should respect reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   .bs-motion,
   .bs-motion * {
