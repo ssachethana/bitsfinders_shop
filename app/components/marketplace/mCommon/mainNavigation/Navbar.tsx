@@ -19,7 +19,7 @@ type Props = { cartCount?: number };
 export default function Navbar({ cartCount = 3 }: Props) {
   const [active, setActive] = useState(DEFAULT_ACTIVE);
   const { open, close, toggle } = useMobileMenu();
-  const spotlight = useSpotlight<HTMLDivElement>();
+  
 
   return (
     <>
@@ -27,8 +27,6 @@ export default function Navbar({ cartCount = 3 }: Props) {
 
       <header className=" w-full">
         <div
-          ref={spotlight.ref}
-          onMouseMove={spotlight.onMouseMove}
           className="group/nav relative h-16 overflow-hidden bg-[#141414]/95 backdrop-blur-md"
         >
           {/* cursor spotlight */}

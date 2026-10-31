@@ -5,22 +5,20 @@ import { ArrowRight, Zap } from "lucide-react";
 
 interface Props {
   viewAllHref?: string;
-  countdownHours?: number;
+  
 }
 
-export default function FlashDealsHeader({ viewAllHref = "#", countdownHours = 6 }: Props) {
+export default function FlashDealsHeader({ viewAllHref = "#"}: Props) {
   return (
     <header className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3 sm:mb-6">
       <div className="flex items-center gap-2">
         <Zap className="fd-bolt h-7 w-7 fill-amber-400 text-amber-500 sm:h-8 sm:w-8" />
         <h2 className="text-xl font-extrabold tracking-tight text-gray-900 sm:text-2xl">
-          Flash Deals
+          Products for you
         </h2>
       </div>
 
-      <p className="order-3 w-full text-sm text-gray-500 sm:order-none sm:w-auto sm:text-base">
-        Limited time offers grab before it’s gone!
-      </p>
+      
 
       
 

@@ -1,9 +1,10 @@
 
-import React from 'react'
+
 
 import Header from '@/app/components/marketplace/mCommon/header/header'
 import Mainnavigation from '@/app/components/marketplace/mCommon/mainNavigation/index'
-import FlashDealsSection from '@/app/components/marketplace/homePage/fashDealsSection/flash_deals'
+import Productssection from '@/app/components/marketplace/homePage/productSection/productsSection'
+import HotDealsSection from '@/app/components/marketplace/homePage/hotDealSection/hot_deals'
 import PromoBannerGrid from '@/app/components/marketplace/homePage/promoBannerGrid/promo_carousel'
 import TopRatedShopsSection from '@/app/components/marketplace/homePage/topRatedShopsSection/topratedshops'
 import WhyChooseUsSection from '@/app/components/marketplace/homePage/whyChooseUsSection/whychoose'
@@ -30,7 +31,8 @@ export default function Page() {
        <main className="w-full sm:pt-80 lg:pt-35 ">
 
         <section className="w-full">
-          <FlashDealsSection />
+          <Productssection />
+          <HotDealsSection/>
         </section>
 
         <section className="w-full">

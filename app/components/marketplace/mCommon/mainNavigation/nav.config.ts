@@ -9,11 +9,11 @@ export type NavItem = {
 
 /** Single source of truth for navigation links (used by desktop + mobile). */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { label: "Deals", href: "#deals", icon: Tag, badge: "Hot" },
-  { label: "New Arrivals", href: "#new", icon: Sparkles },
+  { label: "home", href: "#deals", icon: Tag },
   { label: "Brands", href: "#brands", icon: Flame },
-  { label: "Support", href: "#support", icon: LifeBuoy },
   { label: "Shops", href: "#shops", icon: Store },
+  { label: "Support", href: "#support", icon: LifeBuoy },
+  
 ] as const;
 
 export const DEFAULT_ACTIVE = NAV_ITEMS[0].label;

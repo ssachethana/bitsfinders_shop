@@ -1,0 +1,23 @@
+/* ProductCard – things Tailwind can't express inline. All class names are prefixed `pc-`.
+   No infinite animations: only a one-shot "pop" on click, plus tilt/glow driven by CSS variables. */
+
+/* Tilt + glow are driven by CSS variables written by useTilt (no React re-renders). */
+.pc-tilt {
+  transform: rotateX(var(--pc-rx, 0deg)) rotateY(var(--pc-ry, 0deg));
+}
+.pc-glow {
+  background: radial-gradient(
+    180px circle at var(--pc-gx, 50%) var(--pc-gy, 50%),
+    var(--pc-glow, transparent),
+    transparent 70%
+  );
+}
+
+/* One-shot (heart toggle / "Added!" check). */
+@keyframes pc-pop { 0% { transform: scale(.3) } 60% { transform: scale(1.35) } 100% { transform: scale(1) } }
+.pc-pop { animation: pc-pop .4s cubic-bezier(.34, 1.56, .64, 1) }
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-tilt { transform: none !important }
+  .pc-pop { animation: none !important }
+}
