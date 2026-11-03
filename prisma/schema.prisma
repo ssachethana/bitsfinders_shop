@@ -1,0 +1,1287 @@
+// BitShop — PostgreSQL + Prisma
+// App Router / modular-monolith friendly schema.
+// Review migration strategy before applying to an existing production database.
+//
+// PRODUCT VARIANTS
+//   Product        = shared info (name, description, brand, category, unit, image)
+//   ProductVariant = sellable + stockable unit (sku, barcode, price, stock)
+//   A simple product has exactly one variant with isDefault = true and hasVariants = false.
+//   Stock, batches, movements, sales and orders all reference variantId.
+//
+// MULTI-TENANT ISOLATION
+//   Every shop-owned row carries shopId. Required parent links use composite FKs
+//   (parentId, shopId) -> parent(id, shopId), so the database itself rejects a row
+//   that points at another shop's data.
+//   Prisma cannot express an OPTIONAL composite FK when shopId is required, so
+//   optional links (brand, supplier, customer, batch, ...) keep a simple FK and are
+//   guarded by triggers in tenant_isolation.sql.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -----------------------------------------------------------------------------
+// ENUMS
+// -----------------------------------------------------------------------------
+
+enum PlatformRole {
+  USER
+  PLATFORM_SUPPORT
+  PLATFORM_ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum MfaType {
+  TOTP
+  EMAIL
+  WEBAUTHN
+}
+
+enum SaleStatus {
+  COMPLETED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum ValuationMethod {
+  FIFO
+  LIFO
+  WEIGHTED_AVERAGE
+}
+
+enum InventoryMovementType {
+  PURCHASE_RECEIVED
+  SALE
+  SALE_RETURN
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  DAMAGE
+  EXPIRED
+  STOCK_TRANSFER_IN
+  STOCK_TRANSFER_OUT
+}
+
+enum ListingStatus {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  COMPLETED
+  CANCELED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum SalesChannel {
+  POS
+  BUSINESS_WEBSITE
+  MARKETPLACE
+  MANUAL
+}
+
+enum SecuritySeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SecurityEventType {
+  FAILED_LOGIN
+  ACCOUNT_LOCKED
+  PASSWORD_CHANGED
+  PASSWORD_RESET_REQUESTED
+  MFA_FAILED
+  MFA_ENABLED
+  MFA_DISABLED
+  SESSION_CREATED
+  SESSION_REVOKED
+  REFRESH_TOKEN_REUSE
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  RATE_LIMIT_EXCEEDED
+  UNAUTHORIZED_ACCESS
+  PERMISSION_DENIED
+  SUSPICIOUS_ACTIVITY
+}
+
+enum GlobalProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+// -----------------------------------------------------------------------------
+// IDENTITY / AUTHENTICATION
+// -----------------------------------------------------------------------------
+
+model User {
+  id             Int        @id @default(autoincrement())
+  name           String     @db.VarChar(120)
+  email          String     @unique @db.VarChar(254)
+  passwordHash   String?    @db.VarChar(255)
+  status         UserStatus @default(ACTIVE)
+  platformRole   PlatformRole @default(USER)
+  language       String     @default("en") @db.VarChar(10)
+  imageUrl       String?    @db.VarChar(2048)
+  emailVerifiedAt DateTime?
+  lastLoginAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  ownedShops        Shop[]                 @relation("ShopOwner")
+  memberships       ShopMember[]
+  sessions          Session[]
+  emailTokens       EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+  mfaMethods        MfaMethod[]
+  recoveryCodes     RecoveryCode[]
+  sales             Sale[]                 @relation("SaleCashier")
+  processedReturns  Return[]               @relation("ReturnProcessor")
+  expenses          Expense[]              @relation("ExpenseCreator")
+  priceChanges      ProductPriceHistory[]  @relation("PriceChangedBy")
+  reports           ProfitReport[]         @relation("ReportGenerator")
+  recordedLosses    InventoryLoss[]        @relation("LossRecorder")
+  inventoryMovements InventoryMovement[]   @relation("MovementActor")
+  createdApiKeys    ApiKey[]               @relation("ApiKeyCreator")
+  auditLogs         AuditLog[]             @relation("AuditActor")
+  securityEvents    SecurityEvent[]        @relation("SecurityEventUser")
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress    String?  @db.VarChar(45)
+  userAgent    String?  @db.VarChar(512)
+  deviceName   String?  @db.VarChar(120)
+  expiresAt    DateTime
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  refreshTokens RefreshToken[]
+
+  @@index([userId, expiresAt])
+  @@index([revokedAt])
+}
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tokenHash   String   @unique @db.VarChar(128)
+  familyId    String   @db.VarChar(64)
+  expiresAt   DateTime
+  usedAt      DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([sessionId, expiresAt])
+  @@index([familyId])
+  @@index([revokedAt])
+}
+
+model EmailVerificationToken {
+  id          String   @id @default(cuid())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String   @unique @db.VarChar(128)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id          String   @id @default(cuid())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String   @unique @db.VarChar(128)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model MfaMethod {
+  id              String   @id @default(cuid())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            MfaType
+  // Encrypt TOTP/WebAuthn secret material with a managed key; never store plaintext.
+  secretEncrypted String?  @db.Text
+  credentialId    String?  @unique @db.VarChar(512)
+  isEnabled       Boolean  @default(false)
+  verifiedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, isEnabled])
+}
+
+model RecoveryCode {
+  id        String    @id @default(cuid())
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String    @unique @db.VarChar(128)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, usedAt])
+}
+
+// -----------------------------------------------------------------------------
+// TENANT / SHOP / RBAC
+// -----------------------------------------------------------------------------
+
+model Shop {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(160)
+  slug        String   @unique @db.VarChar(180)
+  currency    String   @default("USD") @db.VarChar(3)
+  timezone    String   @default("UTC") @db.VarChar(64)
+  location    String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  deletedAt   DateTime?
+  ownerId     Int
+  owner       User     @relation("ShopOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members          ShopMember[]
+  roles            Role[]
+  products         Product[]
+  batches          PurchaseBatch[]
+  promotions       Promotion[]
+  sales            Sale[]
+  returns          Return[]
+  expenses         Expense[]
+  profitReports    ProfitReport[]
+  losses           InventoryLoss[]
+  customers        Customer[]
+  suppliers        Supplier[]
+  brands           Brand[]
+  categories       LocalCategory[]
+  analytics        ShopAnalytics?
+  inventoryMovements InventoryMovement[]
+  websiteListings  WebsiteListing[]
+  marketplaceListings MarketplaceListing[]
+  orders           Order[]
+  apiKeys          ApiKey[]
+  auditLogs        AuditLog[]
+  securityEvents   SecurityEvent[]
+
+  @@index([ownerId])
+  @@index([isActive, deletedAt])
+}
+
+model ShopMember {
+  id        Int              @id @default(autoincrement())
+  shopId    Int
+  userId    Int
+  status    MembershipStatus @default(INVITED)
+  invitedAt DateTime         @default(now())
+  joinedAt  DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  shop      Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roles     MemberRole[]
+
+  @@unique([shopId, userId])
+  // Compound target enables tenant-safe MemberRole relations.
+  @@unique([id, shopId])
+  @@index([userId, status])
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  shopId      Int
+  name        String   @db.VarChar(80)
+  description String?  @db.VarChar(255)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shop        Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  members     MemberRole[]
+
+  @@unique([shopId, name])
+  @@unique([id, shopId])
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.VarChar(120)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model MemberRole {
+  memberId Int
+  roleId   Int
+  shopId   Int
+  assignedAt DateTime @default(now())
+
+  member ShopMember @relation(fields: [memberId, shopId], references: [id, shopId], onDelete: Cascade)
+  role   Role       @relation(fields: [roleId, shopId], references: [id, shopId], onDelete: Cascade)
+
+  @@id([memberId, roleId])
+  @@index([shopId, roleId])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  shopId      Int
+  createdById Int
+  name        String    @db.VarChar(100)
+  keyPrefix   String    @db.VarChar(16)
+  keyHash     String    @unique @db.VarChar(128)
+  scopes      String[]  @default([])
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  shop      Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  createdBy User @relation("ApiKeyCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([shopId, revokedAt])
+  @@index([createdById])
+}
+
+// -----------------------------------------------------------------------------
+// CATEGORIES
+// GlobalCategory = BitShop's standard marketplace taxonomy.
+// LocalCategory = shop's own private category tree.
+// A local category may optionally map to one global category.
+// Product stores both classifications independently.
+// -----------------------------------------------------------------------------
+
+model GlobalCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(120)
+  slug        String   @unique @db.VarChar(140)
+  description String?  @db.VarChar(500)
+  imageUrl    String?  @db.VarChar(2048)
+  parentId    Int?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent          GlobalCategory?  @relation("GlobalCategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children        GlobalCategory[] @relation("GlobalCategoryTree")
+  localCategories LocalCategory[]
+  products        Product[]
+  globalProducts  GlobalProduct[]
+
+  @@index([parentId, sortOrder])
+  @@index([isActive])
+}
+
+model LocalCategory {
+  id               Int      @id @default(autoincrement())
+  shopId           Int
+  name             String   @db.VarChar(120)
+  slug             String   @db.VarChar(140)
+  description      String?  @db.VarChar(500)
+  imageUrl         String?  @db.VarChar(2048)
+  parentId         Int?
+  globalCategoryId Int?
+  sortOrder        Int      @default(0)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  shop          Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  // parent must be in the same shop — enforced by trigger (see tenant_isolation.sql).
+  parent        LocalCategory?  @relation("LocalCategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children      LocalCategory[] @relation("LocalCategoryTree")
+  globalCategory GlobalCategory? @relation(fields: [globalCategoryId], references: [id], onDelete: SetNull)
+  products      Product[]
+
+  @@unique([shopId, slug])
+  @@unique([id, shopId])
+  @@index([shopId, parentId, sortOrder])
+  @@index([globalCategoryId])
+}
+
+// -----------------------------------------------------------------------------
+// CATALOG
+// -----------------------------------------------------------------------------
+
+model Unit {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(60)
+  symbol    String   @unique @db.VarChar(16)
+  createdAt DateTime @default(now())
+  products  Product[]
+  globalProducts GlobalProduct[]
+}
+
+model Brand {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  name      String   @db.VarChar(120)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([shopId, name])
+  @@unique([id, shopId])
+}
+
+// Platform-wide brand used by the global catalog. Shops copy it into their own Brand.
+model GlobalBrand {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(120)
+  logoUrl   String?  @db.VarChar(2048)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products GlobalProduct[]
+}
+
+// Product = shared catalog info. Price, SKU, barcode and stock live on ProductVariant.
+model Product {
+  id                   Int      @id @default(autoincrement())
+  shopId               Int
+  name                 String   @db.VarChar(180)
+  slug                 String   @db.VarChar(200)
+  description          String?  @db.Text
+  imageUrl             String?  @db.VarChar(2048)
+  reminder             Boolean  @default(false)
+  brandId              Int?
+  localCategoryId      Int?
+  globalCategoryId     Int?
+  // Set when the shop adopted this product from the global catalog.
+  globalProductId      Int?
+  unitId               Int
+  valuationMethod      ValuationMethod @default(FIFO)
+  // false = simple product (single default variant), true = option-based variants
+  hasVariants          Boolean  @default(false)
+  isActive             Boolean  @default(true)
+  displayProductInApp  Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  shop             Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  // brand / localCategory must belong to the same shop — enforced by trigger
+  // (Prisma cannot model an optional composite FK with a required shopId).
+  brand            Brand?           @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  localCategory    LocalCategory?   @relation(fields: [localCategoryId], references: [id], onDelete: Restrict)
+  globalCategory   GlobalCategory?  @relation(fields: [globalCategoryId], references: [id], onDelete: SetNull)
+  globalProduct    GlobalProduct?   @relation(fields: [globalProductId], references: [id], onDelete: SetNull)
+  unit             Unit             @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  options          ProductOption[]
+  variants         ProductVariant[]
+  saleItems        SaleItem[]
+  promotions       Promotion[]
+  websiteListing   WebsiteListing?
+  marketplaceListing MarketplaceListing?
+  orderItems       OrderItem[]
+
+  @@unique([shopId, slug])
+  // A shop adopts each global product at most once (NULLs are allowed many times).
+  @@unique([shopId, globalProductId])
+  @@unique([id, shopId])
+  @@index([shopId, name])
+  @@index([shopId, isActive])
+  @@index([globalCategoryId])
+  @@index([globalProductId])
+  @@index([localCategoryId])
+  @@index([brandId])
+}
+
+// -----------------------------------------------------------------------------
+// GLOBAL CATALOG (platform-owned, shared by every shop; no price / stock / cost)
+// A shop "adopts" a GlobalProduct by copying it into its own Product/ProductVariant.
+// -----------------------------------------------------------------------------
+
+model GlobalProduct {
+  id               Int                 @id @default(autoincrement())
+  name             String              @db.VarChar(180)
+  slug             String              @unique @db.VarChar(200)
+  description      String?             @db.Text
+  imageUrl         String?             @db.VarChar(2048)
+  globalBrandId    Int?
+  globalCategoryId Int?
+  unitId           Int
+  // false = simple product (single default variant), true = option-based variants
+  hasVariants      Boolean             @default(false)
+  status           GlobalProductStatus @default(DRAFT)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  brand        GlobalBrand?           @relation(fields: [globalBrandId], references: [id], onDelete: SetNull)
+  category     GlobalCategory?        @relation(fields: [globalCategoryId], references: [id], onDelete: SetNull)
+  unit         Unit                   @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  options      GlobalProductOption[]
+  variants     GlobalProductVariant[]
+  shopProducts Product[]
+
+  @@index([status, name])
+  @@index([globalCategoryId])
+  @@index([globalBrandId])
+}
+
+// An option of a global product, e.g. "Color", "Size".
+model GlobalProductOption {
+  id              Int      @id @default(autoincrement())
+  globalProductId Int
+  name            String   @db.VarChar(60)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  globalProduct GlobalProduct              @relation(fields: [globalProductId], references: [id], onDelete: Cascade)
+  values        GlobalProductOptionValue[]
+  variantValues GlobalVariantOptionValue[]
+
+  @@unique([globalProductId, name])
+  // Compound target: a variant's option must belong to the variant's own product.
+  @@unique([id, globalProductId])
+  @@index([globalProductId, sortOrder])
+}
+
+// A value of a global option, e.g. "Red", "XL".
+model GlobalProductOptionValue {
+  id        Int      @id @default(autoincrement())
+  optionId  Int
+  value     String   @db.VarChar(80)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  option        GlobalProductOption        @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  variantValues GlobalVariantOptionValue[]
+
+  @@unique([optionId, value])
+  // Compound target: guarantees a variant's value belongs to the stated option.
+  @@unique([id, optionId])
+}
+
+// A global variant has exactly one value per option (Color=Red, Size=XL).
+// globalProductId ties variant, option and value to the SAME global product.
+model GlobalVariantOptionValue {
+  globalVariantId Int
+  globalProductId Int
+  optionId        Int
+  optionValueId   Int
+
+  globalVariant GlobalProductVariant     @relation(fields: [globalVariantId, globalProductId], references: [id, globalProductId], onDelete: Cascade)
+  option        GlobalProductOption      @relation(fields: [optionId, globalProductId], references: [id, globalProductId], onDelete: NoAction)
+  optionValue   GlobalProductOptionValue @relation(fields: [optionValueId, optionId], references: [id, optionId], onDelete: Restrict)
+
+  @@id([globalVariantId, optionId])
+  @@index([optionValueId])
+  @@index([optionId, globalProductId])
+}
+
+model GlobalProductVariant {
+  id              Int      @id @default(autoincrement())
+  globalProductId Int
+  name            String   @db.VarChar(180)
+  barcode         String?  @unique @db.VarChar(80)
+  // Same format as ProductVariant.optionsKey: "12:45|13:47", default variant = "".
+  optionsKey      String   @default("") @db.VarChar(255)
+  imageUrl        String?  @db.VarChar(2048)
+  isDefault       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  globalProduct GlobalProduct              @relation(fields: [globalProductId], references: [id], onDelete: Cascade)
+  optionValues  GlobalVariantOptionValue[]
+  shopVariants  ProductVariant[]
+
+  @@unique([globalProductId, optionsKey])
+  @@unique([id, globalProductId])
+  @@index([globalProductId, isActive, sortOrder])
+  // Not expressible in Prisma — see tenant_isolation.sql:
+  // CREATE UNIQUE INDEX "GlobalProductVariant_one_default_per_product"
+  //   ON "GlobalProductVariant" ("globalProductId") WHERE "isDefault" = true;
+}
+
+// -----------------------------------------------------------------------------
+// PRODUCT VARIANTS
+// -----------------------------------------------------------------------------
+
+// An option of a product, e.g. "Color", "Size". Limit options per product
+// (suggested max 3) in the service layer.
+model ProductOption {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  name      String   @db.VarChar(60)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product       Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  values        ProductOptionValue[]
+  variantValues VariantOptionValue[]
+
+  @@unique([productId, name])
+  // Compound target: a variant's option must belong to the variant's own product.
+  @@unique([id, productId])
+  @@index([productId, sortOrder])
+}
+
+// A value of an option, e.g. "Red", "XL".
+model ProductOptionValue {
+  id        Int      @id @default(autoincrement())
+  optionId  Int
+  value     String   @db.VarChar(80)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  option        ProductOption        @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  variantValues VariantOptionValue[]
+
+  @@unique([optionId, value])
+  // Compound target: guarantees a variant's value belongs to the stated option.
+  @@unique([id, optionId])
+}
+
+// Sellable + stockable unit of a product.
+model ProductVariant {
+  id                Int      @id @default(autoincrement())
+  shopId            Int
+  productId         Int
+  // Set when this variant was created from a global catalog variant.
+  // Must belong to the product's globalProductId — enforced by trigger.
+  globalVariantId   Int?
+  // e.g. "Red / XL". Default variant of a simple product can be named "Default".
+  name              String   @db.VarChar(180)
+  sku               String   @db.VarChar(80)
+  barcode           String?  @db.VarChar(80)
+  // Sorted option value ids joined as "12:45|13:47". Default variant = "".
+  // The unique below blocks duplicate option combinations per product.
+  optionsKey        String   @default("") @db.VarChar(255)
+  sellingPrice      Decimal  @default(0) @db.Decimal(19, 4)
+  lowStockThreshold Decimal  @default(0) @db.Decimal(14, 3)
+  imageUrl          String?  @db.VarChar(2048)
+  isDefault         Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Tenant-safe: the variant's shopId must equal its product's shopId.
+  product       Product               @relation(fields: [productId, shopId], references: [id, shopId], onDelete: Cascade)
+  globalVariant GlobalProductVariant? @relation(fields: [globalVariantId], references: [id], onDelete: SetNull)
+  optionValues  VariantOptionValue[]
+  batches       PurchaseBatch[]
+  movements     InventoryMovement[]
+  saleItems     SaleItem[]
+  orderItems    OrderItem[]
+  losses        InventoryLoss[]
+  priceHistory  ProductPriceHistory[]
+  promotions    Promotion[]
+
+  @@unique([shopId, sku])
+  @@unique([shopId, barcode])
+  @@unique([productId, optionsKey])
+  @@unique([id, shopId])
+  // Compound target: VariantOptionValue ties variant and option to the same product.
+  @@unique([id, productId])
+  @@index([productId, isActive, sortOrder])
+  @@index([shopId, isActive])
+  @@index([globalVariantId])
+  // Not expressible in Prisma — see tenant_isolation.sql:
+  // CREATE UNIQUE INDEX "ProductVariant_one_default_per_product"
+  //   ON "ProductVariant" ("productId") WHERE "isDefault" = true;
+}
+
+// A variant has exactly one value per option (Color=Red, Size=XL).
+// productId guarantees variant, option and value all belong to the SAME product
+// (and therefore the same shop).
+model VariantOptionValue {
+  variantId     Int
+  productId     Int
+  optionId      Int
+  optionValueId Int
+
+  variant     ProductVariant     @relation(fields: [variantId, productId], references: [id, productId], onDelete: Cascade)
+  option      ProductOption      @relation(fields: [optionId, productId], references: [id, productId], onDelete: NoAction)
+  optionValue ProductOptionValue @relation(fields: [optionValueId, optionId], references: [id, optionId], onDelete: Restrict)
+
+  @@id([variantId, optionId])
+  @@index([optionValueId])
+  @@index([optionId, productId])
+}
+
+// -----------------------------------------------------------------------------
+// STOCK / PURCHASING / SUPPLIERS
+// Stock is tracked per variant. Product-level stock = sum over its variants.
+// -----------------------------------------------------------------------------
+
+model Supplier {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  name      String   @db.VarChar(160)
+  contact   String?  @db.VarChar(255)
+  email     String?  @db.VarChar(254)
+  phone     String?  @db.VarChar(40)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop    Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  batches PurchaseBatch[]
+
+  @@index([shopId, name])
+}
+
+model PurchaseBatch {
+  id              Int      @id @default(autoincrement())
+  shopId          Int
+  variantId       Int
+  supplierId      Int?
+  batchNumber     String?  @db.VarChar(100)
+  quantity        Decimal  @db.Decimal(14, 3)
+  remaining       Decimal  @db.Decimal(14, 3)
+  costPerUnit     Decimal  @db.Decimal(19, 4)
+  sellPrice       Decimal? @db.Decimal(19, 4)
+  purchasedAt     DateTime @default(now())
+  expiryDate      DateTime?
+  createdAt       DateTime @default(now())
+
+  shop       Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  variant    ProductVariant @relation(fields: [variantId, shopId], references: [id, shopId], onDelete: Restrict)
+  // supplier must belong to the same shop — enforced by trigger.
+  supplier   Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  saleLinks  SaleItemBatch[]
+  losses     InventoryLoss[]
+  returnItems ReturnItem[]
+  promotions Promotion[]
+  movements  InventoryMovement[]
+
+  // Compound target: SaleItemBatch links are tenant-safe.
+  @@unique([id, shopId])
+  @@index([shopId, variantId, purchasedAt])
+  @@index([expiryDate])
+  @@index([supplierId])
+}
+
+model InventoryMovement {
+  id            Int                   @id @default(autoincrement())
+  shopId        Int
+  variantId     Int
+  batchId       Int?
+  type          InventoryMovementType
+  // Signed quantity delta: positive adds stock, negative removes stock.
+  quantityDelta Decimal               @db.Decimal(14, 3)
+  unitCost      Decimal?              @db.Decimal(19, 4)
+  referenceType String?               @db.VarChar(40)
+  referenceId   String?               @db.VarChar(100)
+  note          String?               @db.VarChar(500)
+  createdById   Int?
+  createdAt     DateTime              @default(now())
+
+  shop      Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  variant   ProductVariant @relation(fields: [variantId, shopId], references: [id, shopId], onDelete: Restrict)
+  // batch must belong to the same shop AND the same variant — enforced by trigger.
+  batch     PurchaseBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  createdBy User?          @relation("MovementActor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([shopId, variantId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+// -----------------------------------------------------------------------------
+// PROMOTIONS
+// variantId = null  => applies to all variants of the product.
+// -----------------------------------------------------------------------------
+
+model Promotion {
+  id           Int          @id @default(autoincrement())
+  shopId       Int
+  name         String       @db.VarChar(120)
+  discountType DiscountType
+  value        Decimal      @db.Decimal(19, 4)
+  startDate    DateTime
+  endDate      DateTime
+  isActive     Boolean      @default(true)
+  productId    Int
+  variantId    Int?
+  batchId      Int?
+  createdAt    DateTime     @default(now())
+
+  shop    Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  // Tenant-safe: the product must belong to this promotion's shop.
+  product Product         @relation(fields: [productId, shopId], references: [id, shopId], onDelete: Cascade)
+  // variant / batch must belong to the same shop (and variant to the same product) — trigger.
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  batch   PurchaseBatch?  @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([shopId, startDate, endDate])
+  @@index([productId, isActive])
+  @@index([variantId, isActive])
+}
+
+// -----------------------------------------------------------------------------
+// POS SALES / RETURNS
+// -----------------------------------------------------------------------------
+
+model Sale {
+  id            Int           @id @default(autoincrement())
+  shopId        Int
+  cashierId     Int?
+  customerId    Int?
+  totalAmount   Decimal       @db.Decimal(19, 4)
+  status        SaleStatus    @default(COMPLETED)
+  paymentMethod PaymentMethod @default(CASH)
+  channel       SalesChannel  @default(POS)
+  receiptNumber String?       @db.VarChar(80)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  shop      Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  cashier   User?     @relation("SaleCashier", fields: [cashierId], references: [id], onDelete: SetNull)
+  // customer must belong to the same shop — enforced by trigger.
+  customer  Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items     SaleItem[]
+  returns   Return[]
+
+  // Compound target: SaleItem and Return are tenant-safe.
+  @@unique([id, shopId])
+  @@index([shopId, createdAt])
+  @@index([cashierId])
+  @@index([customerId])
+  @@index([status, createdAt])
+}
+
+// productId is kept for product-level reporting; variantId drives stock/cost.
+// productName / variantName / sku are snapshots taken at sale time.
+// shopId is repeated here so every parent link can be a tenant-safe composite FK.
+model SaleItem {
+  id          Int      @id @default(autoincrement())
+  saleId      Int
+  shopId      Int
+  productId   Int
+  variantId   Int
+  productName String   @db.VarChar(180)
+  variantName String?  @db.VarChar(180)
+  sku         String   @db.VarChar(80)
+  quantity    Decimal  @db.Decimal(14, 3)
+  price       Decimal  @db.Decimal(19, 4)
+  costAtSale  Decimal  @db.Decimal(19, 4)
+  createdAt   DateTime @default(now())
+
+  sale        Sale           @relation(fields: [saleId, shopId], references: [id, shopId], onDelete: Cascade)
+  product     Product        @relation(fields: [productId, shopId], references: [id, shopId], onDelete: Restrict)
+  variant     ProductVariant @relation(fields: [variantId, shopId], references: [id, shopId], onDelete: Restrict)
+  batchLinks  SaleItemBatch[]
+  returnItems ReturnItem[]
+
+  @@unique([id, shopId])
+  @@index([saleId])
+  @@index([shopId, productId])
+  @@index([shopId, variantId])
+}
+
+model SaleItemBatch {
+  id         Int     @id @default(autoincrement())
+  saleItemId Int
+  batchId    Int
+  shopId     Int
+  quantity   Decimal @db.Decimal(14, 3)
+
+  // Both sides must belong to the same shop.
+  saleItem SaleItem      @relation(fields: [saleItemId, shopId], references: [id, shopId], onDelete: Cascade)
+  batch    PurchaseBatch @relation(fields: [batchId, shopId], references: [id, shopId], onDelete: Restrict)
+
+  @@unique([saleItemId, batchId])
+  @@index([batchId])
+}
+
+model Return {
+  id              Int      @id @default(autoincrement())
+  saleId          Int
+  shopId          Int
+  processedById   Int?
+  totalRefunded   Decimal  @db.Decimal(19, 4)
+  reason          String?  @db.VarChar(500)
+  createdAt       DateTime @default(now())
+
+  // Tenant-safe: a return can only reference a sale of the same shop.
+  sale        Sale  @relation(fields: [saleId, shopId], references: [id, shopId], onDelete: Restrict)
+  shop        Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  processedBy User? @relation("ReturnProcessor", fields: [processedById], references: [id], onDelete: SetNull)
+  items       ReturnItem[]
+
+  @@unique([id, shopId])
+  @@index([shopId, createdAt])
+}
+
+model ReturnItem {
+  id           Int      @id @default(autoincrement())
+  returnId     Int
+  shopId       Int
+  saleItemId   Int
+  batchId      Int?
+  quantity     Decimal  @db.Decimal(14, 3)
+  refundAmount Decimal  @db.Decimal(19, 4)
+  isRestocked  Boolean  @default(true)
+
+  return   Return         @relation(fields: [returnId, shopId], references: [id, shopId], onDelete: Cascade)
+  saleItem SaleItem       @relation(fields: [saleItemId, shopId], references: [id, shopId], onDelete: Restrict)
+  // batch must belong to the same shop — enforced by trigger.
+  batch    PurchaseBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([returnId])
+  @@index([saleItemId])
+}
+
+// -----------------------------------------------------------------------------
+// CRM / FINANCE / REPORTS
+// -----------------------------------------------------------------------------
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  name      String   @db.VarChar(160)
+  phone     String?  @db.VarChar(40)
+  email     String?  @db.VarChar(254)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop  Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sales Sale[]
+
+  @@index([shopId, name])
+  @@index([shopId, phone])
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  shopId      Int
+  addedById   Int?
+  title       String   @db.VarChar(180)
+  description String?  @db.VarChar(500)
+  amount      Decimal  @db.Decimal(19, 4)
+  expenseDate DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  shop    Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  addedBy User? @relation("ExpenseCreator", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@index([shopId, expenseDate])
+}
+
+model ProfitReport {
+  id            Int      @id @default(autoincrement())
+  shopId        Int
+  generatedById Int?
+  totalSales    Decimal  @db.Decimal(19, 4)
+  totalExpenses Decimal  @db.Decimal(19, 4)
+  totalLoss     Decimal  @db.Decimal(19, 4)
+  netProfit     Decimal  @db.Decimal(19, 4)
+  periodStart   DateTime
+  periodEnd     DateTime
+  createdAt     DateTime @default(now())
+
+  shop        Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  generatedBy User? @relation("ReportGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([shopId, periodStart, periodEnd])
+}
+
+model InventoryLoss {
+  id             Int      @id @default(autoincrement())
+  shopId         Int
+  variantId      Int
+  batchId        Int?
+  recordedById   Int?
+  quantity       Decimal  @db.Decimal(14, 3)
+  reason         String   @db.VarChar(500)
+  costAtLoss     Decimal  @db.Decimal(19, 4)
+  totalLossValue Decimal  @db.Decimal(19, 4)
+  createdAt      DateTime @default(now())
+
+  variant    ProductVariant @relation(fields: [variantId, shopId], references: [id, shopId], onDelete: Restrict)
+  // batch must belong to the same shop AND the same variant — enforced by trigger.
+  batch      PurchaseBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  shop       Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  recordedBy User?          @relation("LossRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([shopId, createdAt])
+  @@index([variantId])
+}
+
+model ProductPriceHistory {
+  id          Int      @id @default(autoincrement())
+  shopId      Int
+  variantId   Int
+  changedById Int?
+  oldPrice    Decimal  @db.Decimal(19, 4)
+  newPrice    Decimal  @db.Decimal(19, 4)
+  reason      String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  variant   ProductVariant @relation(fields: [variantId, shopId], references: [id, shopId], onDelete: Restrict)
+  changedBy User?          @relation("PriceChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([variantId, createdAt])
+  @@index([shopId, createdAt])
+}
+
+model ShopAnalytics {
+  id                Int      @id @default(autoincrement())
+  shopId            Int      @unique
+  currentDayKey     String   @default("") @db.VarChar(10)
+  currentWeekKey    String   @default("") @db.VarChar(10)
+  currentMonthKey   String   @default("") @db.VarChar(7)
+  currentYearKey    String   @default("") @db.VarChar(4)
+  dayTotalRevenue   Decimal  @default(0) @db.Decimal(19, 4)
+  dayTotalCost      Decimal  @default(0) @db.Decimal(19, 4)
+  dayTotalProfit    Decimal  @default(0) @db.Decimal(19, 4)
+  daySaleCount      Int      @default(0)
+  weekTotalRevenue  Decimal  @default(0) @db.Decimal(19, 4)
+  weekTotalCost     Decimal  @default(0) @db.Decimal(19, 4)
+  weekTotalProfit   Decimal  @default(0) @db.Decimal(19, 4)
+  weekSaleCount     Int      @default(0)
+  monthTotalRevenue Decimal  @default(0) @db.Decimal(19, 4)
+  monthTotalCost    Decimal  @default(0) @db.Decimal(19, 4)
+  monthTotalProfit  Decimal  @default(0) @db.Decimal(19, 4)
+  monthSaleCount    Int      @default(0)
+  yearTotalRevenue  Decimal  @default(0) @db.Decimal(19, 4)
+  yearTotalCost     Decimal  @default(0) @db.Decimal(19, 4)
+  yearTotalProfit   Decimal  @default(0) @db.Decimal(19, 4)
+  yearSaleCount     Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+// -----------------------------------------------------------------------------
+// BUSINESS WEBSITE + MARKETPLACE LISTINGS
+// Listings are product-level. overridePrice applies to all variants of the
+// product; add a per-variant price table later if variant-wise pricing is needed.
+// -----------------------------------------------------------------------------
+
+model WebsiteListing {
+  id          Int           @id @default(autoincrement())
+  shopId      Int
+  productId   Int           @unique
+  status      ListingStatus @default(DRAFT)
+  isVisible   Boolean       @default(true)
+  overridePrice Decimal?    @db.Decimal(19, 4)
+  publishedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  // Tenant-safe: a shop can only list its own products.
+  product Product @relation(fields: [productId, shopId], references: [id, shopId], onDelete: Cascade)
+
+  @@index([shopId, status, isVisible])
+}
+
+model MarketplaceListing {
+  id           Int           @id @default(autoincrement())
+  shopId       Int
+  productId    Int           @unique
+  status       ListingStatus @default(DRAFT)
+  isVisible    Boolean       @default(true)
+  overridePrice Decimal?     @db.Decimal(19, 4)
+  publishedAt  DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  shop    Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  // Tenant-safe: a shop can only list its own products.
+  product Product @relation(fields: [productId, shopId], references: [id, shopId], onDelete: Cascade)
+
+  @@index([status, isVisible, publishedAt])
+  @@index([shopId, status])
+}
+
+// -----------------------------------------------------------------------------
+// MARKETPLACE / WEBSITE ORDERS
+// Keep POS Sale and online Order separate; both can use the same Product catalog.
+// -----------------------------------------------------------------------------
+
+model Order {
+  id              Int         @id @default(autoincrement())
+  shopId          Int
+  orderNumber     String      @db.VarChar(80)
+  channel         SalesChannel
+  status          OrderStatus @default(PENDING)
+  customerName    String      @db.VarChar(160)
+  customerEmail   String?     @db.VarChar(254)
+  customerPhone   String?     @db.VarChar(40)
+  currency        String      @db.VarChar(3)
+  subtotal        Decimal     @db.Decimal(19, 4)
+  discountTotal   Decimal     @default(0) @db.Decimal(19, 4)
+  taxTotal        Decimal     @default(0) @db.Decimal(19, 4)
+  shippingTotal   Decimal     @default(0) @db.Decimal(19, 4)
+  totalAmount     Decimal     @db.Decimal(19, 4)
+  idempotencyKey  String?     @db.VarChar(120)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  shop     Shop        @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  items    OrderItem[]
+  payments Payment[]
+
+  @@unique([shopId, orderNumber])
+  // Idempotency keys are scoped per shop so one tenant can never collide with / probe another.
+  @@unique([shopId, idempotencyKey])
+  // Compound target: OrderItem and Payment are tenant-safe.
+  @@unique([id, shopId])
+  @@index([shopId, status, createdAt])
+  @@index([channel, createdAt])
+}
+
+model OrderItem {
+  id             Int      @id @default(autoincrement())
+  orderId        Int
+  shopId         Int
+  productId      Int?
+  variantId      Int?
+  productName    String   @db.VarChar(180)
+  variantName    String?  @db.VarChar(180)
+  sku            String?  @db.VarChar(80)
+  quantity       Decimal  @db.Decimal(14, 3)
+  unitPrice      Decimal  @db.Decimal(19, 4)
+  unitCost       Decimal? @db.Decimal(19, 4)
+  totalPrice     Decimal  @db.Decimal(19, 4)
+
+  order   Order           @relation(fields: [orderId, shopId], references: [id, shopId], onDelete: Cascade)
+  // product / variant must belong to the same shop (and match each other) — enforced by trigger.
+  product Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model Payment {
+  id                Int      @id @default(autoincrement())
+  orderId           Int
+  shopId            Int
+  provider          String   @db.VarChar(60)
+  providerPaymentId String?  @db.VarChar(160)
+  amount            Decimal  @db.Decimal(19, 4)
+  currency          String   @db.VarChar(3)
+  status            String   @db.VarChar(40)
+  idempotencyKey    String?  @db.VarChar(120)
+  paidAt            DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  order Order @relation(fields: [orderId, shopId], references: [id, shopId], onDelete: Restrict)
+
+  // A provider payment id is unique per provider, not globally across all providers/shops.
+  @@unique([provider, providerPaymentId])
+  @@unique([shopId, idempotencyKey])
+  @@index([orderId, status])
+}
+
+// -----------------------------------------------------------------------------
+// AUDIT / SECURITY TELEMETRY
+// These are append-only by application policy; restrict DB permissions too.
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id          BigInt          @id @default(autoincrement())
+  shopId      Int?
+  actorUserId Int?
+  action      String          @db.VarChar(120)
+  entity      String          @db.VarChar(100)
+  entityId    String?         @db.VarChar(100)
+  severity    SecuritySeverity @default(INFO)
+  ipAddress   String?         @db.VarChar(45)
+  userAgent   String?         @db.VarChar(512)
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+
+  shop  Shop? @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([shopId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([entity, entityId])
+  @@index([action, createdAt])
+}
+
+model SecurityEvent {
+  id          BigInt           @id @default(autoincrement())
+  userId      Int?
+  shopId      Int?
+  eventType   SecurityEventType
+  severity    SecuritySeverity
+  ipAddress   String?          @db.VarChar(45)
+  userAgent   String?          @db.VarChar(512)
+  details     Json?
+  createdAt   DateTime         @default(now())
+
+  user User? @relation("SecurityEventUser", fields: [userId], references: [id], onDelete: SetNull)
+  shop Shop? @relation(fields: [shopId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([shopId, createdAt])
+  @@index([eventType, severity, createdAt])
+}

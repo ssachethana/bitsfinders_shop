@@ -54,8 +54,8 @@ export default function Page() {
       </main> 
 
       {/* Footer */}
-      {/* <Footer />
- */}
+       <Footer />
+
     </div>
   )
 }

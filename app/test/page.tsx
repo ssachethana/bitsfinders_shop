@@ -1,143 +1,104 @@
-"use client";
+"use client"; // needed because we pass callback functions (onClick etc.) to the cards
 
-import { useCallback } from "react";
-// Adjust this path to wherever you put the product-card folder.
-import { ProductCard, type Product } from "@/app/components/marketplace/mCommon/productcard";
+import {
+  MarketplaceProductCard,
+  InventoryProductCard,
+  CashierProductCard,
+  type MarketplaceProduct,
+  type InventoryProduct,
+  type CashierProduct,
+} from "@/app/test/product-card";
 
-/* ---- static demo data ------------------------------------------------ */
-const hours = (h: number) => Date.now() + h * 60 * 60 * 1000;
+/* ---------- sample data ---------- */
+const inThreeHours = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
 
-const PRODUCTS: Product[] = [
-  // flash deals: countdown + stock bar
-  {
-    id: 1,
-    variant: "flash",
-    title: "boAt Rockerz 450 Wireless Headphones",
-    price: 1637.85,
-    oldPrice: 5999,
-    seller: "Tech World",
-    rating: 5,
-    reviews: 125,
-    endsAt: hours(5),
-    stockTotal: 100,
-    stockSold: 72,
-  },
-  {
-    id: 2,
-    variant: "flash",
-    title: "Smart Watch Series 7 with AMOLED Display",
-    price: 8990,
-    oldPrice: 15990,
-    seller: "Gadget Hub",
-    rating: 4,
-    reviews: 88,
-    endsAt: hours(26),
-    stockTotal: 50,
-    stockSold: 47, // "Almost gone!"
-  },
+const marketplaceProducts: MarketplaceProduct[] = [
+  { id: 1, title: "Basmati Rice 5kg", price: 2450, rating: 4.5, reviews: 128, seller: "Fresh Mart" },
+  { id: 2, title: "Wireless Earbuds Pro", price: 7900, oldPrice: 12500, rating: 4, reviews: 52, variant: "hot" },
   {
     id: 3,
+    title: "Smart Watch Series 5",
+    price: 15900,
+    oldPrice: 24900,
+    rating: 4.8,
+    reviews: 310,
     variant: "flash",
-    title: "Sold-out example: Bluetooth Speaker",
-    price: 2490,
-    oldPrice: 4990,
-    seller: "Sound Mart",
-    rating: 4,
-    reviews: 40,
-    endsAt: hours(2),
-    stockTotal: 30,
-    stockSold: 30, // button becomes "Sold out"
-  },
-
-  // hot deals: tag + shine, no countdown
-  {
-    id: 4,
-    variant: "hot",
-    title: "Wireless Gaming Mouse 16000 DPI RGB",
-    price: 3290,
-    oldPrice: 4990,
-    seller: "Gamer Zone",
-    rating: 5,
-    reviews: 312,
-  },
-  {
-    id: 5,
-    variant: "hot",
-    title: "Mechanical Keyboard Blue Switch 87 Keys",
-    price: 6450,
-    oldPrice: 8900,
-    seller: "Tech World",
-    rating: 4,
-    reviews: 204,
-  },
-
-  // normal products: no tag, discount optional
-  {
-    id: 6,
-    variant: "normal",
-    title: "USB-C Fast Charging Cable 1.5m Braided",
-    price: 890,
-    seller: "Cable King",
-    rating: 4,
-    reviews: 57,
-  },
-  {
-    id: 7,
-    variant: "normal",
-    title: "Laptop Backpack Water Resistant 15.6 inch",
-    price: 4200,
-    oldPrice: 4900,
-    seller: "Bag Palace",
-    rating: 3,
-    reviews: 19,
-  },
-  {
-    id: 8,
-    // no variant -> falls back to "normal"
-    title: "Portable Power Bank 20000mAh",
-    price: 5490,
-    seller: "Power Plus",
-    rating: 0,
-    reviews: 0, // no rating count shown
+    endsAt: inThreeHours,
+    stockTotal: 50,
+    stockSold: 38,
   },
 ];
 
-/* ---- page ------------------------------------------------------------ */
-export default function ProductCardDemoPage() {
-  // Stable callbacks: ProductCard is memoised, so these avoid needless re-renders.
-  const handleAddToCart = useCallback(async (product: Product) => {
-    await new Promise((r) => setTimeout(r, 600)); // fake network call
-    console.log("Added to cart:", product.title);
-  }, []);
+const inventoryProducts: InventoryProduct[] = [
+  { id: "i1", name: "Basmati Rice 5kg", category: "Food", price: 2450, stock: 120, sku: "RICE-005", brand: "Araliya" },
+  { id: "i2", name: "Gaming Mouse", category: "Gaming", price: 6500, stock: 8, isFavorite: true },
+  { id: "i3", name: "USB-C Cable", category: "Electronics", price: 950, stock: 0, isUniversalProduct: true },
+];
 
-  const handleWishlist = useCallback((product: Product, liked: boolean) => {
-    console.log(liked ? "Wishlisted:" : "Removed:", product.title);
-  }, []);
+const cashierProducts: CashierProduct[] = [
+  { id: "c1", name: "Green Tea", category: { name: "Beverages" }, sellPrice: 350, currentStock: 40, lowStockThreshold: 10 },
+  {
+    id: "c2",
+    name: "Chocolate Bar",
+    category: { name: "Snacks" },
+    sellPrice: 180,
+    currentStock: 6,
+    lowStockThreshold: 10,
+    activePromotion: { discountType: "PERCENT", value: 10 },
+  },
+  { id: "c3", name: "Notebook A5", category: { name: "Stationery" }, sellPrice: 250, currentStock: 0, lowStockThreshold: 5 },
+];
 
-  const handleExpire = useCallback((product: Product) => {
-    console.log("Deal ended:", product.title);
-  }, []);
-
+/* ---------- page ---------- */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <main className="mx-auto max-w-7xl px-3 py-6 sm:px-6 sm:py-10">
-      <h1 className="mb-1 text-xl font-bold text-gray-900 sm:text-2xl">ProductCard demo</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        Flash (countdown + stock), Hot (tag + shine) and Normal variants in one responsive grid.
-      </p>
+    <section className="mb-12">
+      <h2 className="mb-4 text-lg font-bold text-gray-800">{title}</h2>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">{children}</div>
+    </section>
+  );
+}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
-        {PRODUCTS.map((product, i) => (
-          <ProductCard
-            key={product.id}
-            product={product}
+export default function Page() {
+  return (
+    <div className="mx-auto max-w-6xl bg-gray-50 p-6">
+      <Section title="Marketplace (normal / hot / flash)">
+        {marketplaceProducts.map((p, i) => (
+          <MarketplaceProductCard
+            key={p.id}
+            product={p}
             index={i}
-            priority={i < 4}
-            onAddToCart={handleAddToCart}
-            onToggleWishlist={handleWishlist}
-            onDealExpire={handleExpire}
+            onAddToCart={async (product) => {
+              await new Promise((r) => setTimeout(r, 600)); // fake API call
+              console.log("add to cart", product.id);
+            }}
+            onToggleWishlist={(product, liked) => console.log("wishlist", product.id, liked)}
           />
         ))}
-      </div>
-    </main>
+      </Section>
+
+      <Section title="Inventory">
+        {inventoryProducts.map((p) => (
+          <InventoryProductCard
+            key={p.id}
+            product={p}
+            onClick={(id) => console.log("open", id)}
+            onFavoriteToggle={(id, value) => console.log("favorite", id, value)}
+            onMenuAction={(id, action) => console.log(action, id)}
+          />
+        ))}
+      </Section>
+
+      <Section title="Cashier">
+        {cashierProducts.map((p) => (
+          <CashierProductCard
+            key={p.id}
+            product={p}
+            currency="Rs."
+            onAddToCart={(product) => console.log("add to bill", product.id)}
+          />
+        ))}
+      </Section>
+    </div>
   );
 }
